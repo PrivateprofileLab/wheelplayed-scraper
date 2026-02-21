@@ -1,0 +1,46 @@
+name: Update Lottery Draws
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
+    - cron: '30 23 * * *'
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode (daily or backfill)'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - backfill
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "backfill" ]; then
+            echo "Running in BACKFILL mode..."
+            node backfill.mjs
+          else
+            echo "Running in DAILY mode..."
+            node scrape.mjs daily
+          fi
