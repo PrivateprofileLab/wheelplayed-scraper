@@ -115,6 +115,10 @@ function parseLotteryNet(html, picks, hasBonus) {
   const draws = [];
   const months = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
 
+  // CRITICAL: Normalize &nbsp; entities to real spaces BEFORE parsing
+  // lottery.net uses &nbsp; between day name and month, which breaks \s+ regex
+  html = html.replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').replace(/\xA0/g, ' ');
+
   // Strategy 1: Split by <tr> rows and find date + numbers
   const rows = html.split(/<tr[\s>]/i);
   for (const row of rows) {
@@ -380,16 +384,31 @@ async function upsertDraws(draws, gameId) {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'  // UPSERT
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
       body: JSON.stringify(batch)
     });
 
-    if (!resp.ok) {
+    if (resp.ok || resp.status === 201) {
+      upserted += batch.length;
+    } else if (resp.status === 409) {
+      // Conflict — insert one by one, skipping duplicates
+      for (const row of batch) {
+        const r2 = await fetch(`${SUPABASE_URL}/rest/v1/draws`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify(row)
+        });
+        if (r2.ok || r2.status === 201) upserted++;
+      }
+    } else {
       const body = await resp.text();
       console.error(`  Supabase error for ${gameId}: ${resp.status} — ${body}`);
-    } else {
-      upserted += batch.length;
     }
   }
   return upserted;
