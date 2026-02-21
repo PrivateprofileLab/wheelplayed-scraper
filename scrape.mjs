@@ -115,9 +115,10 @@ function parseLotteryNet(html, picks, hasBonus) {
   const draws = [];
   const months = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
 
-  // CRITICAL: Normalize &nbsp; entities to real spaces BEFORE parsing
-  // lottery.net uses &nbsp; between day name and month, which breaks \s+ regex
-  html = html.replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').replace(/\xA0/g, ' ');
+  // CRITICAL: Normalize HTML before parsing
+  // lottery.net uses <br> between day name and month: "Thursday <br>February 19, 2026"
+  // Also normalize &nbsp; entities and non-breaking spaces
+  html = html.replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').replace(/\xA0/g, ' ');
 
   // Strategy 1: Split by <tr> rows and find date + numbers
   const rows = html.split(/<tr[\s>]/i);
