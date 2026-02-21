@@ -212,18 +212,38 @@ async function backfillGame(game) {
         consecutiveEmpty = 0;
         console.log(`  ${year}: ${valid.length} draws (total: ${allDraws.length})`);
       } else {
-        // Debug: show HTML structure
+        // Debug: show HTML structure — normalize first
+        const normHtml = html.replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').replace(/\xA0/g, ' ');
         const liCount = (html.match(/<li/gi)||[]).length;
         const trCount = (html.match(/<tr/gi)||[]).length;
-        const dateCount = (html.match(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\w+\s+\d/gi)||[]).length;
-        const hrefDateCount = (html.match(/(?:numbers|results)\/\d{2}-\d{2}-\d{4}/gi)||[]).length;
-        console.log(`  ${year}: 0 draws (${Math.round(html.length/1024)}KB, ${trCount} tr, ${liCount} li, ${dateCount} text dates, ${hrefDateCount} href dates)`);
+        const dateCount = (normHtml.match(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\w+\s+\d/gi)||[]).length;
+        const hrefDateCount = (normHtml.match(/(?:numbers|results)\/\d{2}-\d{2}-\d{4}/gi)||[]).length;
+        const monthCount = (html.match(/January|February|March|April|May|June|July|August|September|October|November|December/gi)||[]).length;
+        const nbspCount = (html.match(/&nbsp;/gi)||[]).length;
+        console.log(`  ${year}: 0 draws (${Math.round(html.length/1024)}KB, ${trCount} tr, ${liCount} li, ${dateCount} text dates, ${hrefDateCount} href dates, ${monthCount} months, ${nbspCount} nbsp)`);
 
-        // If first year with 0, dump a sample
+        // If first year with 0, dump HTML around the table area
         if (allDraws.length === 0 && year === currentYear) {
           console.log(`  --- HTML Sample (first 1000 chars) ---`);
           console.log(html.substring(0, 1000));
           console.log(`  --- End Sample ---`);
+          
+          // Find table area
+          const tableIdx = html.indexOf('<table');
+          if (tableIdx > -1) {
+            console.log(`  --- Table starts at char ${tableIdx} ---`);
+            console.log(html.substring(tableIdx, tableIdx + 1500));
+            console.log(`  --- End Table Sample ---`);
+          } else {
+            console.log(`  --- NO <table> tag found! ---`);
+            // Look for first <tr>
+            const trIdx = html.indexOf('<tr');
+            if (trIdx > -1) {
+              console.log(`  --- First <tr> at char ${trIdx} ---`);
+              console.log(html.substring(trIdx, trIdx + 800));
+              console.log(`  --- End TR Sample ---`);
+            }
+          }
         }
 
         consecutiveEmpty++;
