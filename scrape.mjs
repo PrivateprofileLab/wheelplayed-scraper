@@ -472,6 +472,10 @@ async function main() {
     results.errors.forEach(e => console.log(`   ${e}`));
   }
 
+  // === JACKPOT SCRAPING ===
+  console.log('\n💰 Updating jackpot amounts...');
+  await updateJackpots();
+
   console.log('');
 
   // Exit with error if more than 25% of games failed
@@ -479,6 +483,88 @@ async function main() {
     console.error('🚨 Too many failures — exiting with error code');
     process.exit(1);
   }
+}
+
+// Scrape current jackpot amounts from lottery.net and upsert to Supabase
+async function updateJackpots() {
+  const jackpots = [];
+
+  // Powerball jackpot from lottery.net
+  try {
+    const html = await fetchText('https://www.lottery.net/powerball');
+    // Look for jackpot amount pattern like "$190 Million" or "$1.6 Billion"
+    const jpMatch = html.match(/(?:Estimated\s+)?Jackpot[^$]*?\$\s*([\d,.]+)\s*(Million|Billion)/i)
+                 || html.match(/\$\s*([\d,.]+)\s*(Million|Billion)/i);
+    if (jpMatch) {
+      const num = parseFloat(jpMatch[1].replace(/,/g, ''));
+      const unit = jpMatch[2].toLowerCase();
+      const display = unit === 'billion' ? `$${num}B` : `$${Math.round(num)}M`;
+      // Find next draw date
+      const drawMatch = html.match(/(?:Next|Saturday|Monday|Wednesday)[^:]*?(\w+day)[,\s]+(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?/i);
+      let nextDraw = null;
+      if (drawMatch) {
+        nextDraw = computeNextDate(drawMatch);
+      }
+      jackpots.push({ game: 'powerball', amount: display, next_draw: nextDraw });
+      console.log(`  PB: ${display}${nextDraw ? ' (next: ' + nextDraw + ')' : ''}`);
+    }
+  } catch(e) { console.warn('  PB jackpot fetch failed:', e.message); }
+
+  // Mega Millions jackpot from lottery.net
+  try {
+    const html = await fetchText('https://www.lottery.net/mega-millions');
+    const jpMatch = html.match(/(?:Estimated\s+)?Jackpot[^$]*?\$\s*([\d,.]+)\s*(Million|Billion)/i)
+                 || html.match(/\$\s*([\d,.]+)\s*(Million|Billion)/i);
+    if (jpMatch) {
+      const num = parseFloat(jpMatch[1].replace(/,/g, ''));
+      const unit = jpMatch[2].toLowerCase();
+      const display = unit === 'billion' ? `$${num}B` : `$${Math.round(num)}M`;
+      const drawMatch = html.match(/(?:Next|Tuesday|Friday)[^:]*?(\w+day)[,\s]+(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?/i);
+      let nextDraw = null;
+      if (drawMatch) {
+        nextDraw = computeNextDate(drawMatch);
+      }
+      jackpots.push({ game: 'megamillions', amount: display, next_draw: nextDraw });
+      console.log(`  MM: ${display}${nextDraw ? ' (next: ' + nextDraw + ')' : ''}`);
+    }
+  } catch(e) { console.warn('  MM jackpot fetch failed:', e.message); }
+
+  // Upsert to Supabase jackpots table
+  for (const jp of jackpots) {
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/jackpots`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({
+          game: jp.game,
+          amount: jp.amount,
+          next_draw: jp.next_draw,
+          updated_at: new Date().toISOString()
+        })
+      });
+      if (!resp.ok && resp.status !== 201) {
+        const body = await resp.text();
+        console.warn(`  Jackpot upsert failed for ${jp.game}: ${resp.status} — ${body}`);
+      }
+    } catch(e) {
+      console.warn(`  Jackpot upsert error for ${jp.game}:`, e.message);
+    }
+  }
+}
+
+function computeNextDate(match) {
+  const months = {january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+  const month = match[2].toLowerCase();
+  const day = match[3];
+  const year = new Date().getFullYear();
+  const m = months[month];
+  if (m) return `${year}-${m}-${String(parseInt(day)).padStart(2, '0')}`;
+  return null;
 }
 
 main().catch(e => {
