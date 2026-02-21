@@ -485,47 +485,43 @@ async function main() {
   }
 }
 
-// Scrape current jackpot amounts from lottery.net and upsert to Supabase
+// Scrape current jackpot amounts from lotteryusa.com and upsert to Supabase
 async function updateJackpots() {
   const jackpots = [];
 
-  // Powerball jackpot from lottery.net
+  // Powerball jackpot from lotteryusa.com
   try {
-    const html = await fetchText('https://www.lottery.net/powerball');
-    // Look for jackpot amount pattern like "$190 Million" or "$1.6 Billion"
-    const jpMatch = html.match(/(?:Estimated\s+)?Jackpot[^$]*?\$\s*([\d,.]+)\s*(Million|Billion)/i)
-                 || html.match(/\$\s*([\d,.]+)\s*(Million|Billion)/i);
+    const html = await fetchText('https://www.lotteryusa.com/powerball/');
+    // Target "Next est. jackpot" section specifically
+    const jpMatch = html.match(/Next\s+est\.?\s+jackpot[\s\S]{0,200}?\$\s*([\d,.]+)\s*(Million|Billion)/i);
     if (jpMatch) {
       const num = parseFloat(jpMatch[1].replace(/,/g, ''));
       const unit = jpMatch[2].toLowerCase();
       const display = unit === 'billion' ? `$${num}B` : `$${Math.round(num)}M`;
-      // Find next draw date
-      const drawMatch = html.match(/(?:Next|Saturday|Monday|Wednesday)[^:]*?(\w+day)[,\s]+(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?/i);
-      let nextDraw = null;
-      if (drawMatch) {
-        nextDraw = computeNextDate(drawMatch);
-      }
+      // Find next draw day — PB draws Mon/Wed/Sat
+      const nextDraw = computeNextPBDraw();
       jackpots.push({ game: 'powerball', amount: display, next_draw: nextDraw });
-      console.log(`  PB: ${display}${nextDraw ? ' (next: ' + nextDraw + ')' : ''}`);
+      console.log(`  PB: ${display} (next: ${nextDraw})`);
+    } else {
+      console.log('  PB: could not parse jackpot from lotteryusa.com');
     }
   } catch(e) { console.warn('  PB jackpot fetch failed:', e.message); }
 
-  // Mega Millions jackpot from lottery.net
+  await sleep(500);
+
+  // Mega Millions jackpot from lotteryusa.com
   try {
-    const html = await fetchText('https://www.lottery.net/mega-millions');
-    const jpMatch = html.match(/(?:Estimated\s+)?Jackpot[^$]*?\$\s*([\d,.]+)\s*(Million|Billion)/i)
-                 || html.match(/\$\s*([\d,.]+)\s*(Million|Billion)/i);
+    const html = await fetchText('https://www.lotteryusa.com/mega-millions/');
+    const jpMatch = html.match(/Next\s+est\.?\s+jackpot[\s\S]{0,200}?\$\s*([\d,.]+)\s*(Million|Billion)/i);
     if (jpMatch) {
       const num = parseFloat(jpMatch[1].replace(/,/g, ''));
       const unit = jpMatch[2].toLowerCase();
       const display = unit === 'billion' ? `$${num}B` : `$${Math.round(num)}M`;
-      const drawMatch = html.match(/(?:Next|Tuesday|Friday)[^:]*?(\w+day)[,\s]+(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?/i);
-      let nextDraw = null;
-      if (drawMatch) {
-        nextDraw = computeNextDate(drawMatch);
-      }
+      const nextDraw = computeNextMMDraw();
       jackpots.push({ game: 'megamillions', amount: display, next_draw: nextDraw });
-      console.log(`  MM: ${display}${nextDraw ? ' (next: ' + nextDraw + ')' : ''}`);
+      console.log(`  MM: ${display} (next: ${nextDraw})`);
+    } else {
+      console.log('  MM: could not parse jackpot from lotteryusa.com');
     }
   } catch(e) { console.warn('  MM jackpot fetch failed:', e.message); }
 
@@ -557,17 +553,21 @@ async function updateJackpots() {
   }
 }
 
-function computeNextDate(match) {
-  const months = {january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
-  const month = match[2].toLowerCase();
-  const day = match[3];
-  const year = new Date().getFullYear();
-  const m = months[month];
-  if (m) return `${year}-${m}-${String(parseInt(day)).padStart(2, '0')}`;
+// Compute next Powerball draw date (Mon/Wed/Sat)
+function computeNextPBDraw() {
+  const now = new Date();
+  const drawDays = [1, 3, 6]; // Mon, Wed, Sat
+  for (let i = 0; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    if (drawDays.includes(d.getDay()) && (i > 0 || d.getHours() < 23)) {
+      return d.toISOString().split('T')[0];
+    }
+  }
   return null;
 }
 
-main().catch(e => {
-  console.error('Fatal error:', e);
-  process.exit(1);
-});
+// Compute next Mega Millions draw date (Tue/Fri)
+function computeNextMMDraw() {
+  const now = new Date();
+  const drawDays = [2, 5]; // Tue, Fri
