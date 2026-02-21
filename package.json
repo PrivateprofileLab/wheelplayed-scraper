@@ -1,0 +1,14 @@
+{
+  "name": "wheelplayed-scraper",
+  "version": "1.0.0",
+  "description": "Automated lottery draw scraper for WheelPlayed — fetches from NY Gov API and lottery.net, upserts to Supabase",
+  "type": "module",
+  "scripts": {
+    "scrape": "node scrape.mjs daily",
+    "backfill": "node backfill.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}
