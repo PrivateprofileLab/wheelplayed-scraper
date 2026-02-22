@@ -571,3 +571,17 @@ function computeNextPBDraw() {
 function computeNextMMDraw() {
   const now = new Date();
   const drawDays = [2, 5]; // Tue, Fri
+  for (let i = 0; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    if (drawDays.includes(d.getDay()) && (i > 0 || d.getHours() < 23)) {
+      return d.toISOString().split('T')[0];
+    }
+  }
+  return null;
+}
+
+main().catch(e => {
+  console.error('Fatal error:', e);
+  process.exit(1);
+});
